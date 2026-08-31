@@ -196,6 +196,13 @@ bot.onCommand('/analiz', async ({ chatId, args }) => {
       await bot.sendMessage(chatId, m);
       await new Promise(r => setTimeout(r, 200));
     }
+
+    if (idea.direction !== 'NEUTRAL') {
+      const vp = tracker.openVirtualPosition(idea, userBal, userRisk);
+      if (vp) {
+        await bot.sendMessage(chatId, `📈 <i>↳ #${idea.symbol} (${idea.direction}) canlı izleme listesine eklendi. SL/TP durumu otomatik takip edilecek.</i>`);
+      }
+    }
   } catch (err) {
     await bot.sendMessage(chatId, `❌ Hata: ${err.message}`);
   }
