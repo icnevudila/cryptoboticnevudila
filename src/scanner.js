@@ -2,6 +2,7 @@ import { getTopFuturesSymbols, getKlines, getFundingRates, getAll24hrTickers } f
 import { calculateRSI, checkVolumeSurge, checkEMACross } from './indicators.js';
 import { CONFIG } from './config.js';
 import { loadState, saveState } from './storage.js';
+import { generatePositionIdea, calculateDollarRisk } from './positions.js';
 
 export class MarketScanner {
   constructor(telegramBot) {
@@ -52,18 +53,43 @@ export class MarketScanner {
           // Indicator 3: EMA 9/21 Cross
           const emaCross = checkEMACross(closes);
 
+          // Helper to get quick position setup
+          const getQuickSetup = async (direction) => {
+            try {
+              const idea = await generatePositionIdea(symbol);
+              if (idea && idea.direction !== 'NEUTRAL') return idea;
+            } catch {}
+            // Fallback quick ATR calc
+            const atrEst = currentPrice * 0.012;
+            const isLong = direction === 'LONG';
+            const sl = isLong ? currentPrice - atrEst : currentPrice + atrEst;
+            const tp1 = isLong ? currentPrice + atrEst * 1.5 : currentPrice - atrEst * 1.5;
+            const tp2 = isLong ? currentPrice + atrEst * 3.0 : currentPrice - atrEst * 3.0;
+            const tp3 = isLong ? currentPrice + atrEst * 5.0 : currentPrice - atrEst * 5.0;
+            const slPct = ((Math.abs(currentPrice - sl) / currentPrice) * 100).toFixed(2);
+            return {
+              symbol, direction, entry: currentPrice, currentPrice,
+              stopLoss: sl, tp1, tp2, tp3,
+              suggestedLeverage: '5x', riskPercent: slPct,
+              tp1Percent: (parseFloat(slPct) * 1.5).toFixed(2),
+              tp2Percent: (parseFloat(slPct) * 3.0).toFixed(2),
+              tp3Percent: (parseFloat(slPct) * 5.0).toFixed(2)
+            };
+          };
+
           // --- SIGNAL 1: RSI Oversold (Long Candidate) ---
           if (rsi && rsi <= CONFIG.RSI_OVERSOLD) {
             const key = `${symbol}_RSI_OVERSOLD`;
             if (!state.cooldowns[key] || now - state.cooldowns[key] > cooldownMs) {
               state.cooldowns[key] = now;
               saveState(state);
+              const idea = await getQuickSetup('LONG');
               await this.broadcastSignal(subscribers, {
-                title: '🟢 RSI AŞIRI SATIM (LONG ADAYI)',
+                title: '🟢 RSI AŞIRI SATIM RADARI (LONG FIRSATI)',
                 symbol,
-                price: currentPrice,
-                details: `• <b>RSI (15m):</b> <code>${rsi}</code> (Aşırı Satış Seviyesi &lt; 30)\n• <b>Fiyat:</b> <code>$${currentPrice}</code>\n• <b>Tavsiye:</b> Tepki yükselişi ve dönüş mumu beklenebilir.`,
-                badge: '📈 ALIM BÖLGESİ'
+                badge: '📈 DİPTEN DÖNÜŞ ADAYI',
+                reason: `15m RSI: ${rsi} (< 30) aşırı satım bölgesine ulaştı.`,
+                idea
               });
             }
           }
@@ -74,29 +100,31 @@ export class MarketScanner {
             if (!state.cooldowns[key] || now - state.cooldowns[key] > cooldownMs) {
               state.cooldowns[key] = now;
               saveState(state);
+              const idea = await getQuickSetup('SHORT');
               await this.broadcastSignal(subscribers, {
-                title: '🔴 RSI AŞIRI ALIM (SHORT ADAYI)',
+                title: '🔴 RSI AŞIRI ALIM RADARI (SHORT FIRSATI)',
                 symbol,
-                price: currentPrice,
-                details: `• <b>RSI (15m):</b> <code>${rsi}</code> (Aşırı Alım Seviyesi &gt; 70)\n• <b>Fiyat:</b> <code>$${currentPrice}</code>\n• <b>Tavsiye:</b> Düzeltme veya kâr satışı riski yüksek.`,
-                badge: '📉 SATIŞ BÖLGESİ'
+                badge: '📉 TEPEDEN DÜZELTME ADAYI',
+                reason: `15m RSI: ${rsi} (> 70) aşırı alım bölgesinde yoruldu.`,
+                idea
               });
             }
           }
 
           // --- SIGNAL 3: Volume Spike (Balina / Ani Hacim Girişi) ---
           if (volumeSurge && volumeSurge.isSurge) {
-            const direction = volumeSurge.isBullish ? '🟢 ALIM' : '🔴 SATIM';
+            const dir = volumeSurge.isBullish ? 'LONG' : 'SHORT';
             const key = `${symbol}_VOL_SURGE`;
             if (!state.cooldowns[key] || now - state.cooldowns[key] > cooldownMs) {
               state.cooldowns[key] = now;
               saveState(state);
+              const idea = await getQuickSetup(dir);
               await this.broadcastSignal(subscribers, {
-                title: `⚡ ANİ HACİM PATLAMASI (${volumeSurge.ratio}x)`,
+                title: `⚡ ANİ HACİM PATLAMASI (${volumeSurge.ratio}x Ort.)`,
                 symbol,
-                price: currentPrice,
-                details: `• <b>Hacim Artışı:</b> <code>Ortalamanın ${volumeSurge.ratio} katı</code>\n• <b>Mum Yönü:</b> ${direction}\n• <b>Fiyat:</b> <code>$${currentPrice}</code>\n• <b>Tavsiye:</b> Güçlü hareket başladı, volatilite yüksek.`,
-                badge: '💥 VOLATİLİTE ALARMI'
+                badge: volumeSurge.isBullish ? '💥 BOĞA HACİM GİRİŞİ' : '💥 AYI SATIŞ BASKISI',
+                reason: `Normalin ${volumeSurge.ratio} katı agresif hacim patlaması gerçekleşti.`,
+                idea
               });
             }
           }
@@ -108,12 +136,13 @@ export class MarketScanner {
             if (!state.cooldowns[key] || now - state.cooldowns[key] > cooldownMs) {
               state.cooldowns[key] = now;
               saveState(state);
+              const idea = await getQuickSetup(isBull ? 'LONG' : 'SHORT');
               await this.broadcastSignal(subscribers, {
-                title: isBull ? '✨ EMA 9/21 GOLDEN CROSS (YÜKSELİŞ)' : '⚠️ EMA 9/21 DEATH CROSS (DÜŞÜŞ)',
+                title: isBull ? '✨ EMA 9/21 GOLDEN CROSS (YÜKSELİŞ TRENDİ)' : '⚠️ EMA 9/21 DEATH CROSS (DÜŞÜŞ TRENDİ)',
                 symbol,
-                price: currentPrice,
-                details: `• <b>Kesişim Türü:</b> ${isBull ? '🟢 EMA 9, EMA 21\'i yukarı kesti' : '🔴 EMA 9, EMA 21\'i aşağı kesti'}\n• <b>Fiyat:</b> <code>$${currentPrice}</code>\n• <b>Zaman Dilimi:</b> 15 Dakikalık Trend`,
-                badge: isBull ? '🚀 YÜKSELİŞ TRENDİ' : '🔻 DÜŞÜŞ TRENDİ'
+                badge: isBull ? '🚀 YÜKSELİŞ TRENDİ BAŞLADI' : '🔻 DÜŞÜŞ TRENDİ BAŞLADI',
+                reason: isBull ? 'EMA 9, EMA 21 ortalamasını yukarı yönlü kesti.' : 'EMA 9, EMA 21 ortalamasını aşağı yönlü kesti.',
+                idea
               });
             }
           }
@@ -177,16 +206,43 @@ export class MarketScanner {
   }
 
   async broadcastSignal(subscribers, signal) {
-    const text = `<b>${signal.title}</b>\n\n` +
-      `🪙 <b>Coin:</b> <code>#${signal.symbol}</code>\n` +
-      `🏷️ <b>Durum:</b> ${signal.badge}\n` +
-      `━━━━━━━━━━━━━━━━━━━\n` +
-      `${signal.details}\n` +
-      `━━━━━━━━━━━━━━━━━━━\n` +
-      `🔗 <a href="https://www.binance.com/tr/futures/${signal.symbol}">Binance'de Aç ↗</a> | ⏰ <i>${new Date().toLocaleTimeString('tr-TR')}</i>`;
+    const state = loadState();
+    const idea = signal.idea;
 
     for (const chatId of subscribers) {
+      const bal = state.userSettings?.[chatId]?.accountBalance || CONFIG.DEFAULT_ACCOUNT_BALANCE;
+      const risk = state.userSettings?.[chatId]?.riskPercent || CONFIG.DEFAULT_RISK_PERCENT;
+      const riskCalc = calculateDollarRisk(idea, bal, risk);
+
+      const dirEmoji = idea.direction === 'LONG' ? '🟢' : '🔴';
+      const dirText = idea.direction === 'LONG' ? 'LONG (AL)' : 'SHORT (SAT)';
+
+      let text = `<b>${signal.title}</b>\n`;
+      text += `🪙 <b>#${signal.symbol} → ${dirEmoji} ${dirText}</b>\n`;
+      text += `🏷️ <b>Durum:</b> ${signal.badge}\n`;
+      text += `⚡ <b>Anlık Fiyat:</b> <code>$${idea.currentPrice || idea.entry}</code>\n`;
+      text += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
+
+      text += `💡 <b>Sinyal Nedeni:</b> <i>${signal.reason}</i>\n\n`;
+
+      text += `💼 <b>ÖNERİLEN İŞLEM KURGUSU (Kasa: $${bal}):</b>\n`;
+      text += `• 💵 <b>Margin:</b> <code>$${riskCalc.marginRequired}</code> (%${risk}) | <b>Kaldıraç:</b> <code>${riskCalc.leverageNum}x</code>\n`;
+      text += `• 🔥 <b>Toplam Pozisyon:</b> <code>$${riskCalc.positionValueDollar}</code> ($${riskCalc.marginRequired} × ${riskCalc.leverageNum}x)\n\n`;
+
+      text += `📍 <b>FİYAT & HEDEFLER:</b>\n`;
+      text += `• 🎯 <b>Giriş:</b> <code>$${idea.entry}</code>\n`;
+      text += `• 🛡️ <b>Stop-Loss (SL):</b> <code>$${idea.stopLoss}</code> (-%${idea.riskPercent}) → <b>-$${riskCalc.slDollarLoss}</b> (-%${riskCalc.slRoi} Margin)\n\n`;
+
+      text += `🎯 <b>KÂR AL HEDEFLERİ:</b>\n`;
+      text += `• <b>TP1:</b> <code>$${idea.tp1}</code> (+%${idea.tp1Percent}) [R:R 1.5:1] → <b>+$${riskCalc.tp1DollarGain}</b> (+%${riskCalc.tp1Roi} Margin)\n`;
+      text += `• <b>TP2:</b> <code>$${idea.tp2}</code> (+%${idea.tp2Percent}) [R:R 3.0:1] → <b>+$${riskCalc.tp2DollarGain}</b> (+%${riskCalc.tp2Roi} Margin)\n`;
+      text += `• <b>TP3:</b> <code>$${idea.tp3}</code> (+%${idea.tp3Percent}) [R:R 5.0:1] → <b>+$${riskCalc.tp3DollarGain}</b> (+%${riskCalc.tp3Roi} Margin)\n\n`;
+
+      text += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+      text += `🔗 <a href="https://www.binance.com/tr/futures/${signal.symbol}">Binance'de Aç ↗</a> | ⏰ <i>${new Date().toLocaleTimeString('tr-TR')}</i>`;
+
       await this.bot.sendMessage(chatId, text);
+      await new Promise(r => setTimeout(r, 200));
     }
   }
 }
