@@ -314,6 +314,22 @@ bot.onCommand('/sanal', handleLivePositions);
 bot.onCommand('/pozisyonlar', handleLivePositions);
 bot.onCommand('/acikpozisyonlar', handleLivePositions);
 
+// 🗑️ /temizle or /sanaltemizle - Clear open virtual positions
+bot.onCommand('/temizle', async ({ chatId }) => {
+  const state = loadState();
+  const count = (state.virtualPositions || []).length;
+  state.virtualPositions = [];
+  saveState(state);
+  await bot.sendMessage(chatId, `🗑️ <b>Sanal pozisyon listesi sıfırlandı.</b> (${count} adet eski işlem temizlendi)\n\n💡 Yeni pozisyon eklemek için: <code>/pozisyon</code>`);
+});
+bot.onCommand('/sanaltemizle', async ({ chatId }) => {
+  const state = loadState();
+  const count = (state.virtualPositions || []).length;
+  state.virtualPositions = [];
+  saveState(state);
+  await bot.sendMessage(chatId, `🗑️ <b>Sanal pozisyon listesi sıfırlandı.</b> (${count} adet eski işlem temizlendi)\n\n💡 Yeni pozisyon eklemek için: <code>/pozisyon</code>`);
+});
+
 // 🏆 /performans - Performance Scorecard
 bot.onCommand('/performans', async ({ chatId }) => {
   const state = loadState();
