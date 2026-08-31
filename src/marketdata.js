@@ -2,29 +2,30 @@
  * Binance Futures Data - Orderbook Depth, Large Trades, Liquidations
  */
 
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'application/json'
+};
+
 const BASE = 'https://fapi.binance.com';
 
 // Orderbook Depth (bid/ask walls)
 export async function getOrderbookDepth(symbol, limit = 20) {
   try {
-    const res = await fetch(`${BASE}/fapi/v1/depth?symbol=${symbol}&limit=${limit}`);
+    const res = await fetch(`${BASE}/fapi/v1/depth?symbol=${symbol}&limit=${limit}`, { headers: HEADERS });
     if (!res.ok) return null;
     const data = await res.json();
 
     const bids = data.bids.map(([price, qty]) => ({ price: parseFloat(price), qty: parseFloat(qty), value: parseFloat(price) * parseFloat(qty) }));
     const asks = data.asks.map(([price, qty]) => ({ price: parseFloat(price), qty: parseFloat(qty), value: parseFloat(price) * parseFloat(qty) }));
 
-    // Find largest bid/ask walls
     const biggestBid = bids.reduce((max, b) => b.value > max.value ? b : max, bids[0]);
     const biggestAsk = asks.reduce((max, a) => a.value > max.value ? a : max, asks[0]);
 
-    // Total bid vs ask depth
     const totalBidValue = bids.reduce((s, b) => s + b.value, 0);
     const totalAskValue = asks.reduce((s, a) => s + a.value, 0);
-    const bidAskRatio = totalBidValue / totalAskValue;
-
-    // Imbalance
-    const imbalance = ((totalBidValue - totalAskValue) / (totalBidValue + totalAskValue)) * 100;
+    const bidAskRatio = totalBidValue / (totalAskValue || 1);
+    const imbalance = ((totalBidValue - totalAskValue) / ((totalBidValue + totalAskValue) || 1)) * 100;
 
     return {
       biggestBidWall: { price: biggestBid.price, value: Math.round(biggestBid.value) },
@@ -44,14 +45,13 @@ export async function getOrderbookDepth(symbol, limit = 20) {
 // Recent Large Trades (Aggressor Trades > threshold)
 export async function getRecentLargeTrades(symbol, limit = 100) {
   try {
-    const res = await fetch(`${BASE}/fapi/v1/trades?symbol=${symbol}&limit=${limit}`);
+    const res = await fetch(`${BASE}/fapi/v1/trades?symbol=${symbol}&limit=${limit}`, { headers: HEADERS });
     if (!res.ok) return null;
     const trades = await res.json();
 
-    // Calculate average trade value
     const values = trades.map(t => parseFloat(t.price) * parseFloat(t.qty));
-    const avgValue = values.reduce((a, b) => a + b, 0) / values.length;
-    const threshold = avgValue * 5; // 5x average = "large" trade
+    const avgValue = values.reduce((a, b) => a + b, 0) / (values.length || 1);
+    const threshold = avgValue * 4;
 
     const largeTrades = trades
       .filter(t => parseFloat(t.price) * parseFloat(t.qty) > threshold)
@@ -59,7 +59,7 @@ export async function getRecentLargeTrades(symbol, limit = 100) {
         price: parseFloat(t.price),
         qty: parseFloat(t.qty),
         value: Math.round(parseFloat(t.price) * parseFloat(t.qty)),
-        isBuyerMaker: t.isBuyerMaker, // true = seller aggressor (sell market order)
+        isBuyerMaker: t.isBuyerMaker,
         time: new Date(t.time).toLocaleTimeString('tr-TR')
       }));
 
@@ -72,8 +72,8 @@ export async function getRecentLargeTrades(symbol, limit = 100) {
       sellAggressorCount: sellAggressor.length,
       buyAggressorVolume: buyAggressor.reduce((s, t) => s + t.value, 0),
       sellAggressorVolume: sellAggressor.reduce((s, t) => s + t.value, 0),
-      dominantSide: buyAggressor.length > sellAggressor.length ? 'ALICILAR' : 'SATICILAR',
-      trades: largeTrades.slice(-5) // last 5 large trades
+      dominantSide: buyAggressor.length >= sellAggressor.length ? 'ALICILAR' : 'SATICILAR',
+      trades: largeTrades.slice(-5)
     };
   } catch { return null; }
 }
@@ -81,7 +81,7 @@ export async function getRecentLargeTrades(symbol, limit = 100) {
 // 24hr stats for context
 export async function get24hrChange(symbol) {
   try {
-    const res = await fetch(`${BASE}/fapi/v1/ticker/24hr?symbol=${symbol}`);
+    const res = await fetch(`${BASE}/fapi/v1/ticker/24hr?symbol=${symbol}`, { headers: HEADERS });
     if (!res.ok) return null;
     const d = await res.json();
     return {
@@ -93,27 +93,19 @@ export async function get24hrChange(symbol) {
       volume: parseFloat(d.volume),
       quoteVolume: parseFloat(d.quoteVolume),
       weightedAvgPrice: parseFloat(d.weightedAvgPrice),
-      count: d.count // number of trades
+      count: d.count
     };
   } catch { return null; }
 }
 
-// Liquidation estimation based on funding + OI change
-export function estimateLiquidationZones(currentPrice, atr, direction) {
-  // Common liquidation clusters based on typical leverage
-  const zones = [];
-  if (direction === 'LONG') {
-    zones.push({ leverage: '100x', price: Number((currentPrice * 0.99).toFixed(6)), label: '100x Liq' });
-    zones.push({ leverage: '50x', price: Number((currentPrice * 0.98).toFixed(6)), label: '50x Liq' });
-    zones.push({ leverage: '25x', price: Number((currentPrice * 0.96).toFixed(6)), label: '25x Liq' });
-    zones.push({ leverage: '10x', price: Number((currentPrice * 0.90).toFixed(6)), label: '10x Liq' });
-    zones.push({ leverage: '5x', price: Number((currentPrice * 0.80).toFixed(6)), label: '5x Liq' });
-  } else {
-    zones.push({ leverage: '100x', price: Number((currentPrice * 1.01).toFixed(6)), label: '100x Liq' });
-    zones.push({ leverage: '50x', price: Number((currentPrice * 1.02).toFixed(6)), label: '50x Liq' });
-    zones.push({ leverage: '25x', price: Number((currentPrice * 1.04).toFixed(6)), label: '25x Liq' });
-    zones.push({ leverage: '10x', price: Number((currentPrice * 1.10).toFixed(6)), label: '10x Liq' });
-    zones.push({ leverage: '5x', price: Number((currentPrice * 1.20).toFixed(6)), label: '5x Liq' });
-  }
-  return zones;
+// Liquidation Level Estimation
+export function estimateLiquidationZones(currentPrice, atr) {
+  const atrBuffer = atr || currentPrice * 0.015;
+  return [
+    { leverage: '100x', price: Number((currentPrice * 1.01).toFixed(2)), label: '100x Liq' },
+    { leverage: '50x', price: Number((currentPrice * 1.02).toFixed(2)), label: '50x Liq' },
+    { leverage: '25x', price: Number((currentPrice * 1.04).toFixed(2)), label: '25x Liq' },
+    { leverage: '10x', price: Number((currentPrice * 1.10).toFixed(2)), label: '10x Liq' },
+    { leverage: '5x', price: Number((currentPrice * 1.20).toFixed(2)), label: '5x Liq' }
+  ];
 }

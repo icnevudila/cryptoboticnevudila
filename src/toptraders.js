@@ -3,13 +3,18 @@
  * All public endpoints, no API key required.
  */
 
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Accept': 'application/json'
+};
+
 const BASE = 'https://fapi.binance.com';
 const FUTURES_DATA = 'https://fapi.binance.com/futures/data';
 
 // Top Traders Long/Short Position Ratio (by position size, not account count)
 export async function getTopTraderPositionRatio(symbol, period = '15m', limit = 10) {
   try {
-    const res = await fetch(`${FUTURES_DATA}/topLongShortPositionRatio?symbol=${symbol}&period=${period}&limit=${limit}`);
+    const res = await fetch(`${FUTURES_DATA}/topLongShortPositionRatio?symbol=${symbol}&period=${period}&limit=${limit}`, { headers: HEADERS });
     if (!res.ok) return [];
     return await res.json();
   } catch { return []; }
@@ -18,7 +23,7 @@ export async function getTopTraderPositionRatio(symbol, period = '15m', limit = 
 // Top Traders Long/Short Account Ratio (by number of accounts)
 export async function getTopTraderAccountRatio(symbol, period = '15m', limit = 10) {
   try {
-    const res = await fetch(`${FUTURES_DATA}/topLongShortAccountRatio?symbol=${symbol}&period=${period}&limit=${limit}`);
+    const res = await fetch(`${FUTURES_DATA}/topLongShortAccountRatio?symbol=${symbol}&period=${period}&limit=${limit}`, { headers: HEADERS });
     if (!res.ok) return [];
     return await res.json();
   } catch { return []; }
@@ -27,7 +32,7 @@ export async function getTopTraderAccountRatio(symbol, period = '15m', limit = 1
 // Global Long/Short Account Ratio (all traders)
 export async function getGlobalLongShortRatio(symbol, period = '15m', limit = 10) {
   try {
-    const res = await fetch(`${FUTURES_DATA}/globalLongShortAccountRatio?symbol=${symbol}&period=${period}&limit=${limit}`);
+    const res = await fetch(`${FUTURES_DATA}/globalLongShortAccountRatio?symbol=${symbol}&period=${period}&limit=${limit}`, { headers: HEADERS });
     if (!res.ok) return [];
     return await res.json();
   } catch { return []; }
@@ -36,7 +41,7 @@ export async function getGlobalLongShortRatio(symbol, period = '15m', limit = 10
 // Taker Buy/Sell Volume Ratio (Aggressive buyers vs sellers)
 export async function getTakerBuySellRatio(symbol, period = '15m', limit = 10) {
   try {
-    const res = await fetch(`${FUTURES_DATA}/takerlongshortRatio?symbol=${symbol}&period=${period}&limit=${limit}`);
+    const res = await fetch(`${FUTURES_DATA}/takerlongshortRatio?symbol=${symbol}&period=${period}&limit=${limit}`, { headers: HEADERS });
     if (!res.ok) return [];
     return await res.json();
   } catch { return []; }
@@ -45,7 +50,7 @@ export async function getTakerBuySellRatio(symbol, period = '15m', limit = 10) {
 // Open Interest (total open position value)
 export async function getOpenInterest(symbol) {
   try {
-    const res = await fetch(`${BASE}/fapi/v1/openInterest?symbol=${symbol}`);
+    const res = await fetch(`${BASE}/fapi/v1/openInterest?symbol=${symbol}`, { headers: HEADERS });
     if (!res.ok) return null;
     return await res.json();
   } catch { return null; }
@@ -54,127 +59,111 @@ export async function getOpenInterest(symbol) {
 // Open Interest Statistics (historical)
 export async function getOpenInterestHist(symbol, period = '15m', limit = 10) {
   try {
-    const res = await fetch(`${FUTURES_DATA}/openInterestHist?symbol=${symbol}&period=${period}&limit=${limit}`);
+    const res = await fetch(`${FUTURES_DATA}/openInterestHist?symbol=${symbol}&period=${period}&limit=${limit}`, { headers: HEADERS });
     if (!res.ok) return [];
     return await res.json();
   } catch { return []; }
 }
 
-/**
- * Comprehensive Top Trader Analysis for a symbol
- * Fetches all data sources and produces a unified scoring
- */
+// Comprehensive Top Trader & Smart Money Sentiment Analysis
 export async function analyzeTopTraderSentiment(symbol) {
-  const [
-    topPosRatio,
-    topAccRatio,
-    globalRatio,
-    takerRatio,
-    oiHist
-  ] = await Promise.all([
-    getTopTraderPositionRatio(symbol, '1h', 5),
-    getTopTraderAccountRatio(symbol, '1h', 5),
-    getGlobalLongShortRatio(symbol, '1h', 5),
-    getTakerBuySellRatio(symbol, '1h', 5),
-    getOpenInterestHist(symbol, '1h', 5)
+  const [posRatio, accRatio, globalRatio, takerRatio, oiHist] = await Promise.all([
+    getTopTraderPositionRatio(symbol, '15m', 5),
+    getTopTraderAccountRatio(symbol, '15m', 5),
+    getGlobalLongShortRatio(symbol, '15m', 5),
+    getTakerBuySellRatio(symbol, '15m', 5),
+    getOpenInterestHist(symbol, '15m', 5)
   ]);
 
-  const result = {
-    symbol,
-    topTraderPosition: null,    // What are top traders holding? (Long or Short bias)
-    topTraderAccounts: null,    // How many top accounts are Long vs Short
-    globalSentiment: null,      // What does the crowd think?
-    takerAggression: null,      // Are aggressive buyers or sellers dominating?
-    oiTrend: null,              // Is open interest growing or shrinking?
-    score: 0,                   // -100 (ultra bearish) to +100 (ultra bullish)
-    signals: []
-  };
+  let score = 0;
+  const signals = [];
 
-  // 1. Top Trader Position Ratio (most important - what are whales holding)
-  if (topPosRatio.length > 0) {
-    const latest = topPosRatio[topPosRatio.length - 1];
-    const longRatio = parseFloat(latest.longAccount || latest.longPosition || 0);
-    const shortRatio = parseFloat(latest.shortAccount || latest.shortPosition || 0);
+  // 1. Top Trader Position Ratio
+  let topTraderPosition = null;
+  if (posRatio.length > 0) {
+    const latest = posRatio[posRatio.length - 1];
+    const longRatio = parseFloat(latest.longPosition || latest.longAccount);
+    const shortRatio = parseFloat(latest.shortPosition || latest.shortAccount);
     const ratio = parseFloat(latest.longShortRatio);
 
-    result.topTraderPosition = { longRatio, shortRatio, ratio };
-
-    if (ratio > 1.8) {
-      result.score += 30;
-      result.signals.push('🐋 Top Traderlar ağırlıklı LONG pozisyonda');
-    } else if (ratio > 1.3) {
-      result.score += 15;
-      result.signals.push('📈 Top Traderlar LONG\'a meyilli');
-    } else if (ratio < 0.6) {
-      result.score -= 30;
-      result.signals.push('🐋 Top Traderlar ağırlıklı SHORT pozisyonda');
-    } else if (ratio < 0.8) {
-      result.score -= 15;
-      result.signals.push('📉 Top Traderlar SHORT\'a meyilli');
-    }
-  }
-
-  // 2. Top Trader Account Ratio
-  if (topAccRatio.length > 0) {
-    const latest = topAccRatio[topAccRatio.length - 1];
-    const ratio = parseFloat(latest.longShortRatio);
-    result.topTraderAccounts = { ratio };
+    topTraderPosition = { longRatio, shortRatio, ratio };
 
     if (ratio > 1.5) {
-      result.score += 15;
-    } else if (ratio < 0.7) {
-      result.score -= 15;
+      score += 30;
+      signals.push(`🐋 Top Traderlar ağırlıklı LONG pozisyonda (${(longRatio * 100).toFixed(1)}% Long / ${(shortRatio * 100).toFixed(1)}% Short, Oran: ${ratio.toFixed(2)})`);
+    } else if (ratio < 0.67) {
+      score -= 30;
+      signals.push(`🐋 Top Traderlar ağırlıklı SHORT pozisyonda (${(shortRatio * 100).toFixed(1)}% Short / ${(longRatio * 100).toFixed(1)}% Long, Oran: ${ratio.toFixed(2)})`);
+    } else if (ratio > 1.1) {
+      score += 15;
+      signals.push(`📈 Top Traderlar LONG'a meyilli (Oran: ${ratio.toFixed(2)})`);
+    } else if (ratio < 0.9) {
+      score -= 15;
+      signals.push(`📉 Top Traderlar SHORT'a meyilli (Oran: ${ratio.toFixed(2)})`);
     }
   }
 
-  // 3. Global Sentiment (Crowd - often contrarian indicator)
-  if (globalRatio.length > 0) {
-    const latest = globalRatio[globalRatio.length - 1];
-    const ratio = parseFloat(latest.longShortRatio);
-    result.globalSentiment = { ratio };
+  // 2. Retail vs Smart Money Divergence
+  let globalSentiment = null;
+  if (globalRatio.length > 0 && posRatio.length > 0) {
+    const latestGlobal = globalRatio[globalRatio.length - 1];
+    const globalLong = parseFloat(latestGlobal.longAccount);
+    const globalShort = parseFloat(latestGlobal.shortAccount);
+    globalSentiment = { long: globalLong, short: globalShort, ratio: parseFloat(latestGlobal.longShortRatio) };
 
-    // Contrarian: if crowd is too long, it can be bearish
-    if (ratio > 2.5) {
-      result.score -= 10;
-      result.signals.push('⚠️ Kalabalık aşırı LONG (Kontrarian dikkat!)');
-    } else if (ratio < 0.5) {
-      result.score += 10;
-      result.signals.push('⚠️ Kalabalık aşırı SHORT (Kontrarian fırsat?)');
+    const topRatio = topTraderPosition ? topTraderPosition.ratio : 1;
+    const gRatio = globalSentiment.ratio;
+
+    if (topRatio > 1.3 && gRatio < 0.9) {
+      score += 25;
+      signals.push(`⚡ DIVERGENCE: Balinalar LONG açarken kalabalık/perakende SHORT tarafında (Klasik Likidite Tuzağı)`);
+    } else if (topRatio < 0.77 && gRatio > 1.1) {
+      score -= 25;
+      signals.push(`⚡ DIVERGENCE: Balinalar SHORT açarken kalabalık/perakende LONG tarafında (Klasik Boğa Tuzağı)`);
     }
   }
 
-  // 4. Taker Buy/Sell Ratio (Aggressive market orders)
+  // 3. Taker Buy/Sell Volume Ratio
+  let takerAggression = null;
   if (takerRatio.length > 0) {
     const latest = takerRatio[takerRatio.length - 1];
+    const buyVol = parseFloat(latest.buyVol);
+    const sellVol = parseFloat(latest.sellVol);
     const ratio = parseFloat(latest.buySellRatio);
-    result.takerAggression = { ratio };
+    takerAggression = { buyVol, sellVol, ratio };
 
     if (ratio > 1.3) {
-      result.score += 20;
-      result.signals.push('💪 Agresif alıcılar baskın (Taker Buy > Sell)');
-    } else if (ratio < 0.7) {
-      result.score -= 20;
-      result.signals.push('💪 Agresif satıcılar baskın (Taker Sell > Buy)');
+      score += 20;
+      signals.push(`💪 Agresif alıcılar baskın (Taker Buy > Sell, Oran: ${ratio.toFixed(2)})`);
+    } else if (ratio < 0.77) {
+      score -= 20;
+      signals.push(`🩸 Agresif satıcılar baskın (Taker Sell > Buy, Oran: ${ratio.toFixed(2)})`);
     }
   }
 
-  // 5. Open Interest Trend
-  if (oiHist.length >= 3) {
-    const recent = parseFloat(oiHist[oiHist.length - 1].sumOpenInterestValue);
+  // 4. Open Interest Trend
+  let oiTrend = null;
+  if (oiHist.length >= 2) {
+    const latest = parseFloat(oiHist[oiHist.length - 1].sumOpenInterestValue);
     const older = parseFloat(oiHist[0].sumOpenInterestValue);
-    const change = ((recent - older) / older) * 100;
-    result.oiTrend = { recent, older, changePercent: change.toFixed(2) };
+    const oiChangePct = ((latest - older) / older) * 100;
+    oiTrend = { recent: latest, older, changePercent: oiChangePct.toFixed(2) };
 
-    if (change > 5) {
-      result.score += 10;
-      result.signals.push(`📊 OI artıyor (+%${change.toFixed(1)}) - Yeni pozisyonlar açılıyor`);
-    } else if (change < -5) {
-      result.signals.push(`📊 OI düşüyor (%${change.toFixed(1)}) - Pozisyonlar kapanıyor`);
+    if (oiChangePct > 5) {
+      signals.push(`📊 OI artıyor (+%${oiChangePct.toFixed(1)}) - Yeni pozisyonlar açılıyor`);
+    } else if (oiChangePct < -5) {
+      signals.push(`📊 OI düşüyor (%${oiChangePct.toFixed(1)}) - Pozisyonlar kapanıyor`);
     }
   }
 
-  // Clamp score
-  result.score = Math.max(-100, Math.min(100, result.score));
-
-  return result;
+  return {
+    symbol,
+    topTraderPosition,
+    topTraderAccounts: accRatio.length > 0 ? { ratio: parseFloat(accRatio[accRatio.length - 1].longShortRatio) } : null,
+    globalSentiment,
+    takerAggression,
+    oiTrend,
+    score: Math.max(-100, Math.min(100, score)),
+    signals
+  };
 }
