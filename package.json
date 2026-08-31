@@ -1,0 +1,10 @@
+{
+  "name": "crypto-signal-bot",
+  "version": "1.0.0",
+  "description": "Telegram Crypto Signal and Scanner Bot for Binance Futures",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js"
+  }
+}
