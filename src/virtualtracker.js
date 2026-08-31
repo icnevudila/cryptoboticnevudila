@@ -5,7 +5,7 @@
  */
 
 import { loadState, saveState } from './storage.js';
-import { getAll24hrTickers } from './binance.js';
+import { getAll24hrTickers, getAllLivePrices, getLivePrice } from './binance.js';
 import { calculateDollarRisk } from './positions.js';
 
 export class VirtualTracker {
@@ -61,7 +61,7 @@ export class VirtualTracker {
       finalDollarPnl: 0
     };
 
-    state.virtualPositions.push(position);
+    state.virtualPositions.unshift(position);
     saveState(state);
     return position;
   }
@@ -74,18 +74,19 @@ export class VirtualTracker {
     const openPositions = state.virtualPositions.filter(p => p.status === 'OPEN');
     if (openPositions.length === 0) return;
 
-    let tickers;
+    let livePrices = {};
     try {
-      tickers = await getAll24hrTickers();
-    } catch { return; }
+      livePrices = await getAllLivePrices();
+    } catch {}
 
     let stateChanged = false;
 
     for (const pos of openPositions) {
-      const ticker = tickers[pos.symbol];
-      if (!ticker) continue;
-
-      const currentPrice = ticker.lastPrice;
+      let currentPrice = livePrices[pos.symbol];
+      if (!currentPrice) {
+        currentPrice = await getLivePrice(pos.symbol);
+      }
+      if (!currentPrice) continue;
       const isLong = pos.direction === 'LONG';
 
       // Calculate unrealized price PnL %

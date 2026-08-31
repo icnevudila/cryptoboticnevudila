@@ -256,16 +256,23 @@ const handleLivePositions = async ({ chatId }) => {
 
   await bot.sendMessage(chatId, `📡 <i>${open.length} adet açık pozisyonun canlı fiyatları ve kâr/zarar durumları çekiliyor...</i>`);
 
-  let tickers;
-  try { tickers = await getAll24hrTickers(); } catch { tickers = {}; }
+  let livePrices = {};
+  try {
+    const { getAllLivePrices } = await import('./binance.js');
+    livePrices = await getAllLivePrices();
+  } catch {}
 
   let totalUnrealizedDollar = 0;
   let msg = `📡 <b>CANLI POZİSYON İZLEME PANELİ (${open.length} Aktif)</b>\n━━━━━━━━━━━━━━━━━━━\n\n`;
 
   for (let i = 0; i < open.length; i++) {
     const pos = open[i];
-    const ticker = tickers[pos.symbol];
-    const currentPrice = ticker ? ticker.lastPrice : pos.entry;
+    let currentPrice = livePrices[pos.symbol];
+    if (!currentPrice) {
+      const { getLivePrice } = await import('./binance.js');
+      currentPrice = await getLivePrice(pos.symbol);
+    }
+    if (!currentPrice) currentPrice = pos.entry;
     const isLong = pos.direction === 'LONG';
 
     const pnlPct = isLong

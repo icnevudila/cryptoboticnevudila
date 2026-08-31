@@ -1,6 +1,6 @@
 /**
  * Binance Futures & Multi-Exchange Fallback API Integration
- * Supports Binance mirrors + Bybit fallback to prevent cloud datacenter / 451 geoblocks
+ * Supports Binance mirrors + direct fast price endpoints
  */
 
 const BINANCE_HOSTS = [
@@ -21,16 +21,36 @@ async function fetchWithFallback(path) {
         }
       });
       if (res.ok) return await res.json();
-      if (res.status === 451) {
-        lastError = new Error(`451 (Binance US Geoblock - Render Region Frankfurt/Singapore olmalı)`);
-        break; // don't retry same blocked IP across mirrors
-      }
       lastError = new Error(`HTTP ${res.status}`);
     } catch (e) {
       lastError = e;
     }
   }
   throw lastError;
+}
+
+// Direct fast live prices for all or single symbol
+export async function getLivePrice(symbol) {
+  try {
+    const data = await fetchWithFallback(`/fapi/v1/ticker/price?symbol=${symbol}`);
+    return parseFloat(data.price);
+  } catch (err) {
+    return null;
+  }
+}
+
+export async function getAllLivePrices() {
+  try {
+    const data = await fetchWithFallback('/fapi/v1/ticker/price');
+    const map = {};
+    for (const item of data) {
+      map[item.symbol] = parseFloat(item.price);
+    }
+    return map;
+  } catch (err) {
+    console.error('Failed to fetch live prices:', err.message);
+    return {};
+  }
 }
 
 // Fetch 24hr Tickers for all USDT-M Futures
@@ -46,7 +66,6 @@ export async function getTopFuturesSymbols(limit = 30) {
     return usdtPairs;
   } catch (err) {
     console.error('Failed to fetch top symbols:', err.message);
-    // Fallback static top 20 list if network/geo issue
     return [
       'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 
       'DOGEUSDT', 'SUIUSDT', 'PEPEUSDT', 'NEARUSDT', 'AVAXUSDT', 
