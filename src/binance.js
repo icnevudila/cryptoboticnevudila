@@ -1,17 +1,42 @@
 /**
- * Binance Futures & Spot API Integration (Public Endpoints, No API Key Required)
+ * Binance Futures & Multi-Exchange Fallback API Integration
+ * Supports Binance mirrors + Bybit fallback to prevent cloud datacenter / 451 geoblocks
  */
 
-const BASE_FUTURES_URL = 'https://fapi.binance.com';
+const BINANCE_HOSTS = [
+  'https://fapi.binance.com',
+  'https://fapi1.binance.com',
+  'https://fapi2.binance.com',
+  'https://fapi3.binance.com'
+];
+
+async function fetchWithFallback(path) {
+  let lastError = null;
+  for (const host of BINANCE_HOSTS) {
+    try {
+      const res = await fetch(`${host}${path}`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'application/json'
+        }
+      });
+      if (res.ok) return await res.json();
+      if (res.status === 451) {
+        lastError = new Error(`451 (Binance US Geoblock - Render Region Frankfurt/Singapore olmalı)`);
+        break; // don't retry same blocked IP across mirrors
+      }
+      lastError = new Error(`HTTP ${res.status}`);
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError;
+}
 
 // Fetch 24hr Tickers for all USDT-M Futures
-export async function getTopFuturesSymbols(limit = 40) {
+export async function getTopFuturesSymbols(limit = 30) {
   try {
-    const res = await fetch(`${BASE_FUTURES_URL}/fapi/v1/ticker/24hr`);
-    if (!res.ok) throw new Error(`Binance error: ${res.status}`);
-    const data = await res.json();
-    
-    // Filter only USDT pairs and sort by 24h quoteVolume descending
+    const data = await fetchWithFallback('/fapi/v1/ticker/24hr');
     const usdtPairs = data
       .filter(item => item.symbol.endsWith('USDT') && !item.symbol.includes('_'))
       .sort((a, b) => parseFloat(b.quoteVolume) - parseFloat(a.quoteVolume))
@@ -21,18 +46,20 @@ export async function getTopFuturesSymbols(limit = 40) {
     return usdtPairs;
   } catch (err) {
     console.error('Failed to fetch top symbols:', err.message);
-    return [];
+    // Fallback static top 20 list if network/geo issue
+    return [
+      'BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'BNBUSDT', 'XRPUSDT', 
+      'DOGEUSDT', 'SUIUSDT', 'PEPEUSDT', 'NEARUSDT', 'AVAXUSDT', 
+      'LINKUSDT', 'ADAUSDT', 'APTUSDT', 'RENDERUSDT', 'FTMUSDT', 
+      'WIFUSDT', 'SHIBUSDT', 'LTCUSDT', 'DOTUSDT', 'TAOUSDT'
+    ];
   }
 }
 
 // Fetch Klines (Candles) for a symbol
 export async function getKlines(symbol, interval = '15m', limit = 50) {
   try {
-    const res = await fetch(`${BASE_FUTURES_URL}/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
-    if (!res.ok) throw new Error(`Klines error: ${res.status}`);
-    const raw = await res.json();
-
-    // Map into clean candlestick objects
+    const raw = await fetchWithFallback(`/fapi/v1/klines?symbol=${symbol}&interval=${interval}&limit=${limit}`);
     return raw.map(k => ({
       openTime: k[0],
       open: parseFloat(k[1]),
@@ -53,16 +80,13 @@ export async function getKlines(symbol, interval = '15m', limit = 50) {
 // Fetch Premium Index & Funding Rates
 export async function getFundingRates() {
   try {
-    const res = await fetch(`${BASE_FUTURES_URL}/fapi/v1/premiumIndex`);
-    if (!res.ok) throw new Error(`Funding error: ${res.status}`);
-    const data = await res.json();
-    
+    const data = await fetchWithFallback('/fapi/v1/premiumIndex');
     return data
       .filter(item => item.symbol.endsWith('USDT'))
       .map(item => ({
         symbol: item.symbol,
         markPrice: parseFloat(item.markPrice),
-        lastFundingRate: parseFloat(item.lastFundingRate) * 100, // as percentage
+        lastFundingRate: parseFloat(item.lastFundingRate) * 100,
         nextFundingTime: item.nextFundingTime
       }));
   } catch (err) {
@@ -71,26 +95,26 @@ export async function getFundingRates() {
   }
 }
 
-// Fetch 24hr ticker data for a single or all symbols
+// Fetch All 24hr Tickers Map
 export async function getAll24hrTickers() {
   try {
-    const res = await fetch(`${BASE_FUTURES_URL}/fapi/v1/ticker/24hr`);
-    if (!res.ok) throw new Error(`Ticker error: ${res.status}`);
-    const data = await res.json();
-    
-    const tickerMap = {};
+    const data = await fetchWithFallback('/fapi/v1/ticker/24hr');
+    const map = {};
     for (const item of data) {
-      tickerMap[item.symbol] = {
-        symbol: item.symbol,
-        lastPrice: parseFloat(item.lastPrice),
-        priceChangePercent: parseFloat(item.priceChangePercent),
-        highPrice: parseFloat(item.highPrice),
-        lowPrice: parseFloat(item.lowPrice),
-        volume: parseFloat(item.volume),
-        quoteVolume: parseFloat(item.quoteVolume)
-      };
+      if (item.symbol.endsWith('USDT')) {
+        map[item.symbol] = {
+          symbol: item.symbol,
+          lastPrice: parseFloat(item.lastPrice),
+          priceChangePercent: parseFloat(item.priceChangePercent),
+          highPrice: parseFloat(item.highPrice),
+          lowPrice: parseFloat(item.lowPrice),
+          volume: parseFloat(item.volume),
+          quoteVolume: parseFloat(item.quoteVolume),
+          weightedAvgPrice: parseFloat(item.weightedAvgPrice)
+        };
+      }
     }
-    return tickerMap;
+    return map;
   } catch (err) {
     console.error('Failed to fetch tickers:', err.message);
     return {};

@@ -33,13 +33,13 @@
       "tp2Hit": false,
       "tp3Hit": false,
       "highestPnl": 0.5,
-      "lowestPnl": -4.64,
-      "currentPnl": -4.07,
+      "lowestPnl": -6.59,
+      "currentPnl": -6.59,
       "openedAt": "2026-08-31T20:47:28.410Z",
       "closedAt": null,
       "closePrice": null,
       "closeReason": null,
-      "currentDollarPnl": -407.13
+      "currentDollarPnl": -658.62
     },
     {
       "id": "1788209252164",
@@ -69,12 +69,12 @@
       "tp3Hit": false,
       "highestPnl": 0.03,
       "lowestPnl": -0.02,
-      "currentPnl": -0.01,
+      "currentPnl": 0.02,
       "openedAt": "2026-08-31T20:47:32.164Z",
       "closedAt": null,
       "closePrice": null,
       "closeReason": null,
-      "currentDollarPnl": -0.7
+      "currentDollarPnl": 2.09
     },
     {
       "id": "1788209259405",
@@ -103,12 +103,12 @@
       "tp3Hit": false,
       "highestPnl": 0,
       "lowestPnl": -0.78,
-      "currentPnl": -0.71,
+      "currentPnl": -0.57,
       "openedAt": "2026-08-31T20:47:39.405Z",
       "closedAt": null,
       "closePrice": null,
       "closeReason": null,
-      "currentDollarPnl": -71.23
+      "currentDollarPnl": -56.98
     },
     {
       "id": "1788209262132",
@@ -137,12 +137,12 @@
       "tp3Hit": false,
       "highestPnl": 0.03,
       "lowestPnl": -0.35,
-      "currentPnl": -0.08,
+      "currentPnl": -0.33,
       "openedAt": "2026-08-31T20:47:42.132Z",
       "closedAt": null,
       "closePrice": null,
       "closeReason": null,
-      "currentDollarPnl": -7.93
+      "currentDollarPnl": -33.14
     },
     {
       "id": "1788209265032",
@@ -209,12 +209,12 @@
       "tp3Hit": false,
       "highestPnl": 0.09,
       "lowestPnl": -0.02,
-      "currentPnl": 0.02,
+      "currentPnl": 0,
       "openedAt": "2026-08-31T20:48:25.461Z",
       "closedAt": null,
       "closePrice": null,
       "closeReason": null,
-      "currentDollarPnl": 1.5
+      "currentDollarPnl": 0
     },
     {
       "id": "1788209314920",
@@ -243,12 +243,12 @@
       "tp3Hit": false,
       "highestPnl": 0.11,
       "lowestPnl": -0.16,
-      "currentPnl": 0.08,
+      "currentPnl": -0.01,
       "openedAt": "2026-08-31T20:48:34.920Z",
       "closedAt": null,
       "closePrice": null,
       "closeReason": null,
-      "currentDollarPnl": 8.38
+      "currentDollarPnl": -1.46
     },
     {
       "id": "1788209828638",
@@ -282,8 +282,8 @@
       "tp3Hit": false,
       "highestPnl": 0.09,
       "lowestPnl": -0.31,
-      "currentPnl": -0.08,
-      "currentDollarPnl": -0.22,
+      "currentPnl": -0.26,
+      "currentDollarPnl": -0.73,
       "openedAt": "2026-08-31T20:57:08.638Z",
       "closedAt": null,
       "closePrice": null,
@@ -320,9 +320,9 @@
       "tp2Hit": false,
       "tp3Hit": false,
       "highestPnl": 0.15,
-      "lowestPnl": 0,
-      "currentPnl": 0.01,
-      "currentDollarPnl": 0.02,
+      "lowestPnl": -0.02,
+      "currentPnl": -0.01,
+      "currentDollarPnl": -0.01,
       "openedAt": "2026-08-31T20:57:10.836Z",
       "closedAt": null,
       "closePrice": null,
@@ -361,8 +361,8 @@
       "tp3Hit": false,
       "highestPnl": 0.03,
       "lowestPnl": -0.16,
-      "currentPnl": 0.03,
-      "currentDollarPnl": 0.03,
+      "currentPnl": -0.06,
+      "currentDollarPnl": -0.06,
       "openedAt": "2026-08-31T21:01:08.105Z",
       "closedAt": null,
       "closePrice": null,
@@ -399,9 +399,9 @@
       "tp2Hit": false,
       "tp3Hit": false,
       "highestPnl": 0.13,
-      "lowestPnl": -0.3,
-      "currentPnl": -0.3,
-      "currentDollarPnl": -0.18,
+      "lowestPnl": -0.33,
+      "currentPnl": -0.24,
+      "currentDollarPnl": -0.14,
       "openedAt": "2026-08-31T21:01:09.528Z",
       "closedAt": null,
       "closePrice": null,
